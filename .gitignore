@@ -1,6 +1,6 @@
 #KEY FILE
 keys.json
-
+nb_station.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
