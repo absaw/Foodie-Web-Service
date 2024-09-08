@@ -1,75 +1,60 @@
-from django.shortcuts import render
-from django.http import HttpResponse
-from django.template import loader
-# Create your views here.
-import requests as req 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 import json
-import jsonpath 
+import requests
 import googlemaps
+from django.conf import settings
 
-def get_home(request):
-    #you receive a HTTP request as parameter when the function
-    #is called. 
+@csrf_exempt
+def get_restaurants(request):
     if request.method == "GET":
-        # template = loader.get_template('home.html')
-        # return HttpResponse(template.render())
         return render(request,'home.html')
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            address = data.get('address')
 
-    elif request.method=="POST":
-        # context = {'name':'Alice'}
-        # Input is address
-        # Step 1 : Google Maps API: Geocode the address
-        # Step 2 : YELP: Get the list of popular restaurants
-        post_dict = request.POST #the form is returned as dictionary
-        print(post_dict)
-        address = post_dict['address']
-        context = {'message':f'You entered: {address}'}
-        print("Address entered: ",address)
-        #Importing keys 
-        key_file=open("/Users/abhishek.sawalkar/Desktop/Codefiles/Foodie-Web-Service/storefront/keys.json",'r')
-        key_read=key_file.read()
-        key_dict=json.loads(key_read)
-        key_file.close()
-        print(key_dict.keys())
-        
-        #Testing google geocoding api
-        print("testing Geocode ")
-        G_API_KEY = key_dict['GMAP_GEOCODING_API_KEY']
-        gmaps = googlemaps.Client(key=G_API_KEY)
-        # g_response = gmaps.geocode('401, palm island 4, Royal palms')
-        g_response = gmaps.geocode(address)
-        print("G Response: ",g_response)
-        if g_response:
+            if not address:
+                return JsonResponse({'error': 'Address is required'}, status=400)
+
+            # Load API keys (consider moving this to environment variables)
+            key_dict = settings.API_KEYS
+
+            # Google Maps Geocoding
+            gmaps = googlemaps.Client(key=key_dict['GMAP_GEOCODING_API_KEY'])
+            g_response = gmaps.geocode(address)
+
+            if not g_response:
+                return JsonResponse({'error': 'Unable to geocode the address'}, status=400)
+
             g_result = g_response[0]
-            #Extracting latitude and longitude for given location
             latitude = g_result['geometry']['location']['lat']
             longitude = g_result['geometry']['location']['lng']
-            print(latitude,longitude)
-            context["geo_coordinates"] = [latitude,longitude]
-        
 
-        # url = "https://api.yelp.com/v3/businesses/search?latitude=40.495569&longitude=-74.445136&sort_by=best_match&limit=20"
-        auth = "Bearer "+key_dict['YELP_API_KEY']
+            # Yelp API request
+            yelp_url = "https://api.yelp.com/v3/businesses/search"
+            headers = {
+                "Authorization": f"Bearer {key_dict['YELP_API_KEY']}",
+            }
+            params = {
+                "latitude": latitude,
+                "longitude": longitude,
+                "sort_by": "rating",
+                "limit": 5,
+                "categories": "restaurants"
+            }
 
-        headers = {
-            "accept": "application/json",
-            "Authorization" : auth
-        }
+            yelp_response = requests.get(yelp_url, headers=headers, params=params)
+            yelp_response.raise_for_status()
+            restaurants = yelp_response.json()['businesses']
 
-        yelp_response = req.get(url, headers=headers)
-        json_res=json.loads(yelp_response.text)
-        print(type(json_res))#dictionary
-        with open('nb_station.json', 'w') as outfile:
-            json.dump(json_res, outfile)
-        # print(json_res["results"][0]["location"])
-        print(yelp_response)
-        
-        return render(yelp_response.text,'home.html')
-        return render(request,'home.html',context)
-        
-        
-    
-       
-    
+            return JsonResponse({
+                'restaurants': restaurants,
+                'address': address,
+                'geo_coordinates': [latitude, longitude]
+            })
 
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
 
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
