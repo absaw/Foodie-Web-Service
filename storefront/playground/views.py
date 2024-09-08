@@ -7,10 +7,13 @@ import googlemaps
 import os
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.views.decorators.csrf import ensure_csrf_cookie
 
-def get_home(request):
+@ensure_csrf_cookie
+def get_restaurant(request):
     if request.method == "GET":
-        return render(request, 'home.html')
+        # return render(request, 'home.html')
+        return redirect('/')
 
     elif request.method == "POST":
         address = request.POST.get('address')
@@ -70,10 +73,33 @@ def get_home(request):
         except KeyError:
             return JsonResponse({'error': 'Unexpected response from Yelp API'}, status=500)
 
-        context = {
+        # context = {
+        #     'address': address,
+        #     'geo_coordinates': [latitude, longitude],
+        #     'restaurants': restaurants
+        # }
+
+        # return render(request, 'home.html', context)
+        
+        # Format the response for the React frontend
+        response_data = {
             'address': address,
             'geo_coordinates': [latitude, longitude],
-            'restaurants': restaurants
+            'restaurants': [
+                {
+                    'id': restaurant['id'],
+                    'name': restaurant['name'],
+                    'rating': restaurant['rating'],
+                    'review_count': restaurant['review_count'],
+                    'categories': [category['title'] for category in restaurant['categories']],
+                    'location': {
+                        'address1': restaurant['location'].get('address1', ''),
+                        'city': restaurant['location'].get('city', ''),
+                    },
+                    'display_phone': restaurant.get('display_phone', ''),
+                }
+                for restaurant in restaurants
+            ]
         }
 
-        return render(request, 'home.html', context)
+        return JsonResponse(response_data)
